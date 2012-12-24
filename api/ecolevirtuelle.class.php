@@ -2,12 +2,16 @@
 class EcoleVirtuelle {
 	var $token    = null;
 	var $cookie   = null;
-	var $debuglvl = 2;
+	var $debuglvl = 1;
 	var $reqid    = 0;
 	
-	var $data     = array('blocks'     => array(1 => array(), 2 => array(), 3 => array(), 4 => array()),
-	                      'username'   => null,
+	var $data     = array('username'   => null,
 	                      'newmessage' => -1,
+	                      'blocks'     => array(1 => array(),
+	                                            2 => array(),
+	                                            3 => array(),
+	                                            4 => array()),
+	                      'messages'   => array(),
 	                      );
 
 	var $months   = array('janvier'   => 1,
@@ -24,30 +28,46 @@ class EcoleVirtuelle {
 	                      'décembre'  => 12
 	                      );
 	
-	function __construct($login, $pass, $cookie = null) {
-		if(!$cookie) {
-			$this->cookie = '/tmp/ev.cookie.'.rand();
-			$this->debug('Cookie file: '.$this->cookie);
-			
-			$this->loadtoken();
-			
-			$x = $this->dlrequest('https://ecolevirtuelle.provincedeliege.be/public/ecov.entree_gestion.actionConnexion?p_temp=1',
-					      array('p_username' => $login,
-						    'p_password' => $pass,
-						    'p_site2pstoretoken' => $this->token,
-						    'p_bt.x' => '0',
-						    'p_bt.y' => '0')
-					);
+	function __construct($login = null, $pass = null, $cookie = null, $verbose = -1) {
+		$this->error(0, 'Success');
+		
+		if($this->debuglvl < 3)
+			libxml_use_internal_errors(true);
+		
+		if($verbose > -1)
+			$this->debuglvl = $verbose;
+		
+		if($login) {
+			if(!$cookie) {
+				$this->cookie = '/tmp/ev.cookie.'.rand();
+				$this->debug('Cookie file: '.$this->cookie);
+				
+				if(!$this->loadtoken()) {
+					$this->panic(2, 'Cannot load token');
+					return null;
+				}
+				
+				$x = $this->dlrequest('https://ecolevirtuelle.provincedeliege.be/public/ecov.entree_gestion.actionConnexion?p_temp=1',
+						      array('p_username' => $login,
+							    'p_password' => $pass,
+							    'p_site2pstoretoken' => $this->token,
+							    'p_bt.x' => '0',
+							    'p_bt.y' => '0')
+						);
+				
+				if($this->checklogin($x))
+					return null;
 
-			$x = $this->dlrequest('https://sso.ecolevirtuelle.provincedeliege.be/pls/orasso/orasso.wwsso_app_admin.ls_login',
-					      array('ssousername' => $login,
-						    'password' => $pass,
-						    'site2pstoretoken' => $this->token)
-					);
-			
-			$this->parsehome($x);
-			
-		} else $this->cookie = $cookie;
+				$x = $this->dlrequest('https://sso.ecolevirtuelle.provincedeliege.be/pls/orasso/orasso.wwsso_app_admin.ls_login',
+						      array('ssousername' => $login,
+							    'password' => $pass,
+							    'site2pstoretoken' => $this->token)
+						);
+				
+				$this->error = $this->checklogin();
+				
+			} else $this->cookie = $cookie;
+		}
 	}
 	
 	function debug($message) {
@@ -58,8 +78,9 @@ class EcoleVirtuelle {
 	}
 	
 	function dlrequest($url, $data = NULL) {
-		$this->debug('Loading: request #'.$this->reqid);
-
+		$this->debug('Loading: request #'.$this->reqid.': '.$url);
+		$this->reqid++;
+		
 		$ch = curl_init();
 
 		curl_setopt($ch, CURLOPT_URL, $url);
@@ -89,8 +110,11 @@ class EcoleVirtuelle {
 
 		$data = curl_exec($ch);
 		curl_close($ch);
-
-		return $data;
+		
+		if($this->debuglvl >= 2)
+			echo $data;
+		
+		return str_replace('<br>', "\n", $data);
 	}
 	
 	function loadtoken() {
@@ -109,20 +133,49 @@ class EcoleVirtuelle {
 				$this->debug('Token: '.$this->token);
 			}
 		}
+		
+		return $this->token;
 	}
 	
+	function parselogin($html) {
+		$xmldoc = new DOMDocument();
+		$xmldoc->loadHTML($html);
+		$xpathvar = new Domxpath($xmldoc);
+		
+		$node = $xpathvar->query('//title');
+		if(!$node->length)
+			return 0;
+			
+		return ($node->item(0)->nodeValue == 'Ecole Virtuelle de la Province de Liège');
+	}
+	
+	function checklogin($html = null) {
+		if(!$html)
+			$html = $this->dlrequest('https://ecolevirtuelle.provincedeliege.be/myecov/ecov.accueil_gestion.Accueil');
+		
+		if($this->parselogin($html)) {
+			$this->error(1, 'Login failed');
+			
+		} else $this->error(0, 'Success');
+		
+		return $this->error['code'];
+	}
+	
+	function error($code, $str) {
+		$this->error = array('code' => $code, 'message' => $str);
+	}
+	
+	/* Basic Data: Header */	
 	function __set_header($queryResult) {
 		$index = 0;
 		
 		foreach($queryResult as $result) {
 			// Messages
 			if($index == 0) {
-				if(trim($result->nodeValue) == 'Pas de messages') {
-					$this->debug('Message: no new messages');
-					$this->data['newmessage'] = 0;
+				if(trim($result->nodeValue) != 'Pas de messages') {
+					$this->data['newmessage'] = (int) preg_replace('/([0-9]+) messag(.+)/', '$1', trim($result->nodeValue));
 				
-				// FIXME
-				} else $this->data['newmessage'] = 42;
+				} else $this->data['newmessage'] = 0;
 			
 			// Profile
 			} else if($index == 1) {
@@ -136,11 +189,13 @@ class EcoleVirtuelle {
 		}
 	}
 	
+	/* Basic Data: Date convertion */
 	function __home_date($str) {
 		$temp = preg_split('/([ ]+)/', $str);
 		return mktime(0, 0, 0, $this->months[$temp[2]], $temp[1], $temp[3]);
 	}
 	
+	/* Blocks: absent/news/... */
 	function __set_blocks($xpathvar) {
 		foreach($this->data['blocks'] as $id => $data) {
 			$block = 'div[@id="block_news_'.$id.'"]/div[@class="postit"]';
@@ -185,12 +240,15 @@ class EcoleVirtuelle {
 			}
 		}
 		
-		print_r($this->data['blocks']);
+		// print_r($this->data['blocks']);
 	}
 	
-	function parsehome($html) {
+	/* Basic Data */
+	function basicdata() {
+		$x = $this->dlrequest('https://ecolevirtuelle.provincedeliege.be/myecov/ecov.accueil_gestion.Accueil');
+				
 		$xmldoc = new DOMDocument();
-		$xmldoc->loadHTML($html);
+		$xmldoc->loadHTML($x);
 		$xpathvar = new Domxpath($xmldoc);
 		
 		/* header (messages, profile, disconnect) */
@@ -199,12 +257,50 @@ class EcoleVirtuelle {
 		/* blocks (away, general notes, section notes) */
 		$this->__set_blocks($xpathvar);
 	}
+	
+	/* Messages (Mail) Support */
+	function messagenode($node) {
+		$msg = array();
+		$tds = $node->getElementsByTagName('td');
+		
+		// date
+		$msg['date'] = trim($tds->item(0)->nodeValue);
+		
+		// from
+		$from = explode("\n", $tds->item(1)->nodeValue);
+		$msg['from']['name'] = trim($from[0]);
+		$msg['from']['info'] = trim($from[1]);
+		
+		// destination
+		// TODO
+		
+		// subject/message
+		$content = $tds->item(3);
+		$inputs = $content->getElementsByTagName('input');
+		$msg['read'] = ($inputs->item(1)->getAttribute('value') == 'LU') ? 1 : 0;
+		
+		$divs = $content->getElementsByTagName('div');		
+		$msg['subject'] = trim($divs->item(0)->nodeValue);
+		$msg['message'] = trim($divs->item($divs->length - 1)->nodeValue);
+		
+		// print_r($msg);
+		
+		return $msg;
+	}
+	
+	function messagelist() {
+		$x = $this->dlrequest('https://ecolevirtuelle.provincedeliege.be/portal/page/portal/ECOV2/MESSAGERIE');
+		// print_r($x);
+		
+		$xmldoc = new DOMDocument();
+		$xmldoc->loadHTML($x);
+		$xpathvar = new Domxpath($xmldoc);
+		
+		/* header (messages, profile, disconnect) */
+		$queryResult = $xpathvar->query('//tbody[@id="listeMsg"]/tr');
+		
+		foreach($queryResult as $node)
+			$this->data['messages'][] = $this->messagenode($node);
+	}
 }
-
-$ev = new EcoleVirtuelle('MAXIME DANIEL', '', '/tmp/ev.cookie.1611080879');
-$x = $ev->dlrequest('https://ecolevirtuelle.provincedeliege.be/myecov/ecov.accueil_gestion.Accueil');
-$ev->parsehome($x);
-
-echo json_encode($ev->data, JSON_PRETTY_PRINT);
 ?>
-
