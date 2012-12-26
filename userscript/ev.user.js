@@ -1,5 +1,6 @@
 // ==UserScript==
 // @name          Ecole Virtuelle AutoLogin
+// @version       1.1
 // @namespace     https://www2.maxux.net
 // @description	  Add an autologin box for ecolevirtuelle
 // @include       https://ecolevirtuelle.provincedeliege.be/*
@@ -37,15 +38,15 @@ function main() {
                         return delete localStorage[key];
                 };
         } */
-
+        
         function createCookie(name, value, days) {
                 var date = new Date();
-                date.setTime(date.getTime()+(days*24*60*60*1000));
+                date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
                 
-                var expires = "; expires="+date.toGMTString();
+                var expires = "; expires=" + date.toGMTString();
                 document.cookie = name + "=" + value + expires + "; path=/";
         }
-        
+
         function readCookie(name) {
                 var nameEQ = name + "=";
                 var ca = document.cookie.split(';');
@@ -66,8 +67,10 @@ function main() {
                 createCookie(name, "", -1);
         }
         
-        jQ('.connection').append('<input type="checkbox" name="save" id="save" value="yes"><label for="save">Enregistrer mon login</label>');
+        // auto-connect button
+        jQ('.connection').append('<br /><input type="checkbox" name="save" id="save" value="yes"><label for="save">Connexion automatique</label>');
         
+        // should we autocomplete form
         if((uname = readCookie('__username'))) {
                 jQ('#username').val(uname);
                 jQ('#password').val(readCookie('__password'));
@@ -79,8 +82,8 @@ function main() {
                         jQ('form input[type="image"]').click();
                 }
         }
-
         
+        // onclick wrapper function
         jQ('form input[type="image"]').click(function() {
                 if(jQ('#save').attr('checked') == 'checked') {
                         createCookie('__username', jQ('#username').val(), 365);
@@ -90,6 +93,15 @@ function main() {
                         eraseCookie('__password');
                 }
         });
+        
+        // header exists, add custom disconnect button
+        if(jQ('#header ul').length == 1) {
+                jQ('#header ul').append('<li><a id="fulldiscon" href="https://ecolevirtuelle.provincedeliege.be/myecov/ecov.session_gestion.logout">Déconnexion sans reconnexion</a></li>');
+                jQ('#fulldiscon').click(function() {
+                        eraseCookie('__username');
+                        eraseCookie('__password');
+                });
+        }
 }
 
 addJQuery(main);
