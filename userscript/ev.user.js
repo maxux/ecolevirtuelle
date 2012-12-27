@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          Ecole Virtuelle AutoLogin
-// @version       1.1
-// @namespace     https://www2.maxux.net
+// @version       1.11
+// @namespace     https://www.maxux.net
 // @description	  Add an autologin box for ecolevirtuelle
 // @include       https://ecolevirtuelle.provincedeliege.be/*
 // @match         https://ecolevirtuelle.provincedeliege.be/*
@@ -71,16 +71,14 @@ function main() {
         jQ('.connection').append('<br /><input type="checkbox" name="save" id="save" value="yes"><label for="save">Connexion automatique</label>');
         
         // should we autocomplete form
-        if((uname = readCookie('__username'))) {
+        if((uname = readCookie('__username')) && jQ('#username').length == 1) {
                 jQ('#username').val(uname);
                 jQ('#password').val(readCookie('__password'));
                 jQ('#save').attr('checked', 'checked');
                 
                 // load jQuery and execute the main function
-                if(window.location == 'https://ecolevirtuelle.provincedeliege.be/') {
-                        eraseCookie('ecovsess');
-                        jQ('form input[type="image"]').click();
-                }
+                eraseCookie('ecovsess');
+                jQ('form input[type="image"]').click();
         }
         
         // onclick wrapper function
