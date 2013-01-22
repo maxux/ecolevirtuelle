@@ -83,7 +83,7 @@ function main() {
         
         // onclick wrapper function
         jQ('form input[type="image"]').click(function() {
-                if(jQ('#save').attr('checked') == 'checked') {
+		if(jQ('#save').is(':checked')) {
                         createCookie('__username', jQ('#username').val(), 365);
                         createCookie('__password', jQ('#password').val(), 365);
                 } else {
